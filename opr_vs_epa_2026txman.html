@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OPR vs EPA — 2026 TX Manufacturers</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f0f0f;color:#e0e0e0;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:22px;font-weight:500;margin-bottom:4px}
+.sub{font-size:14px;color:#888;margin-bottom:24px}
+.chart-wrap{position:relative;width:100%;height:460px;margin-bottom:12px}
+.chart-wrap2{position:relative;width:100%;height:280px;margin-bottom:12px}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:12px;color:#999;margin-bottom:24px}
+.legend span{display:flex;align-items:center;gap:4px}
+.dot{width:10px;height:10px;border-radius:2px;display:inline-block}
+.line-swatch{width:14px;height:3px;display:inline-block;border-radius:1px}
+.section-title{font-size:16px;font-weight:500;margin:20px 0 8px}
+.note{font-size:13px;color:#777;margin-top:16px;line-height:1.6}
+</style>
+</head>
+<body>
+<h1>OPR vs EPA comparison — 2026 TX Manufacturers</h1>
+<p class="sub">How much does OPR inflate (or deflate) team ratings compared to EPA?</p>
+
+<div class="chart-wrap"><canvas id="mainChart"></canvas></div>
+<div class="legend">
+  <span><span class="dot" style="background:#378ADD"></span>OPR</span>
+  <span><span class="dot" style="background:#1D9E75"></span>EPA</span>
+  <span><span class="line-swatch" style="background:#378ADD"></span>OPR trend (cubic)</span>
+  <span><span class="line-swatch" style="background:#1D9E75"></span>EPA trend (cubic)</span>
+</div>
+
+<p class="section-title">OPR − EPA gap per team</p>
+<div class="chart-wrap2"><canvas id="diffChart"></canvas></div>
+<div class="legend">
+  <span><span class="dot" style="background:#D85A30"></span>OPR higher (inflated)</span>
+  <span><span class="dot" style="background:#534AB7"></span>EPA higher</span>
+</div>
+
+<p class="note">
+  Data: TBA (OPR) and Statbotics (EPA) for 2026txman.<br>
+  OPR solves a least-squares system across all matches. EPA uses Elo-style iterative updates scaled to point units — more conservative, more predictive.<br>
+  The divergence at the top suggests OPR disproportionately inflates high-performing teams, especially when strong teams share alliances.
+</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const merged = [
+  {t:"6800",opr:188.65,epa:155.8},{t:"2583",opr:188.30,epa:107.4},{t:"118",opr:138.03,epa:153.1},
+  {t:"5572",opr:105.79,epa:87.8},{t:"6377",opr:102.22,epa:80.3},{t:"436",opr:74.39,epa:53.9},
+  {t:"5892",opr:57.61,epa:51.6},{t:"1255",opr:52.97,epa:41.6},{t:"418",opr:50.33,epa:60.0},
+  {t:"9506",opr:44.08,epa:44.8},{t:"9140",opr:42.09,epa:42.0},{t:"3545",opr:32.46,epa:8.6},
+  {t:"4076",opr:30.42,epa:19.0},{t:"8750",opr:28.96,epa:24.5},{t:"6180",opr:28.39,epa:30.5},
+  {t:"6901",opr:28.13,epa:33.3},{t:"2789",opr:25.99,epa:30.6},{t:"7088",opr:21.26,epa:-0.1},
+  {t:"2587",opr:20.97,epa:41.8},{t:"9577",opr:20.76,epa:30.2},{t:"5103",opr:19.99,epa:31.8},
+  {t:"11224",opr:16.47,epa:-9.7},{t:"6243",opr:15.40,epa:24.9},{t:"11309",opr:13.16,epa:15.7},
+  {t:"8573",opr:9.22,epa:19.2},{t:"10913",opr:5.28,epa:34.3},{t:"7138",opr:4.45,epa:-9.2}
+];
+
+merged.sort((a, b) => b.opr - a.opr);
+const labels = merged.map(m => m.t);
+const oprVals = merged.map(m => m.opr);
+const epaVals = merged.map(m => m.epa);
+const diffs = merged.map(m => Math.round((m.opr - m.epa) * 100) / 100);
+const xs = merged.map((_, i) => i);
+
+function polyFit(xs, ys, deg) {
+  const n = xs.length, s = deg + 1;
+  const M = Array.from({length: s}, () => Array(s + 1).fill(0));
+  for (let i = 0; i < s; i++) {
+    for (let j = 0; j < s; j++) for (let k = 0; k < n; k++) M[i][j] += Math.pow(xs[k], i + j);
+    for (let k = 0; k < n; k++) M[i][s] += ys[k] * Math.pow(xs[k], i);
+  }
+  for (let i = 0; i < s; i++) {
+    let mx = i;
+    for (let k = i + 1; k < s; k++) if (Math.abs(M[k][i]) > Math.abs(M[mx][i])) mx = k;
+    [M[i], M[mx]] = [M[mx], M[i]];
+    for (let k = i + 1; k < s; k++) { const f = M[k][i] / M[i][i]; for (let j = i; j <= s; j++) M[k][j] -= f * M[i][j]; }
+  }
+  const c = Array(s).fill(0);
+  for (let i = s - 1; i >= 0; i--) { c[i] = M[i][s]; for (let j = i + 1; j < s; j++) c[i] -= M[i][j] * c[j]; c[i] /= M[i][i]; }
+  return c;
+}
+function evalP(c, x) { return c.reduce((s, v, i) => s + v * Math.pow(x, i), 0); }
+
+const oC = polyFit(xs, oprVals, 3);
+const eC = polyFit(xs, epaVals, 3);
+const smooth = Array.from({length: 100}, (_, i) => i * (xs.length - 1) / 99);
+const oTrend = smooth.map(x => ({x, y: Math.round(evalP(oC, x) * 100) / 100}));
+const eTrend = smooth.map(x => ({x, y: Math.round(evalP(eC, x) * 100) / 100}));
+
+const gc = 'rgba(255,255,255,0.06)', tc = '#888';
+
+new Chart(document.getElementById('mainChart'), {
+  type: 'scatter',
+  data: {
+    datasets: [
+      {label:'OPR',data:xs.map((x,i)=>({x,y:oprVals[i]})),backgroundColor:'#378ADD',pointRadius:5,pointHoverRadius:7,order:2},
+      {label:'EPA',data:xs.map((x,i)=>({x,y:epaVals[i]})),backgroundColor:'#1D9E75',pointRadius:5,pointHoverRadius:7,pointStyle:'triangle',order:2},
+      {label:'OPR trend',data:oTrend,type:'line',borderColor:'#378ADD',borderWidth:2.5,pointRadius:0,fill:false,order:1},
+      {label:'EPA trend',data:eTrend,type:'line',borderColor:'#1D9E75',borderWidth:2.5,pointRadius:0,fill:false,order:1}
+    ]
+  },
+  options: {
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{
+      title:ctx=>{const i=Math.round(ctx[0].parsed.x);return i>=0&&i<labels.length?'Team '+labels[i]:'';},
+      label:ctx=>{if(ctx.datasetIndex===0)return'OPR: '+ctx.parsed.y.toFixed(2);if(ctx.datasetIndex===1)return'EPA: '+ctx.parsed.y.toFixed(1);return'';}
+    }}},
+    scales:{
+      x:{title:{display:true,text:'Team rank (by OPR)',color:tc},ticks:{color:tc,callback:function(v){const i=Math.round(v);return i>=0&&i<labels.length?labels[i]:'';},maxRotation:90,minRotation:45,autoSkip:true,maxTicksLimit:15},grid:{color:gc}},
+      y:{title:{display:true,text:'Points',color:tc},ticks:{color:tc},grid:{color:gc}}
+    }
+  }
+});
+
+new Chart(document.getElementById('diffChart'), {
+  type:'bar',
+  data:{labels,datasets:[{label:'OPR - EPA',data:diffs,backgroundColor:diffs.map(d=>d>=0?'#D85A30':'#534AB7'),borderRadius:3}]},
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'Gap: '+(ctx.parsed.y>0?'+':'')+ctx.parsed.y.toFixed(2)}}},
+    scales:{
+      x:{ticks:{color:tc,maxRotation:90,minRotation:45,autoSkip:false,font:{size:10}},grid:{display:false}},
+      y:{title:{display:true,text:'OPR − EPA gap',color:tc},ticks:{color:tc},grid:{color:gc}}
+    }
+  }
+});
+</script>
+</body>
+</html>
